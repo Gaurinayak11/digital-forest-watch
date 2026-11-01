@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Amazon Watch: Rond&#244;nia deforestation dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+/* Palette: light moss and cream for the page, deep forest green for the header,
+   burnt orange for forest loss. */
+:root {
+  --bg: #eef3e4;
+  --panel: #fbfcf6;
+  --panel-2: #e4edd8;
+  --line: #c6d8b4;
+  --text: #1e3a2a;
+  --muted: #4b6656;
+  --forest: #2f7d50;
+  --forest-dark: #1f4d34;
+  --loss: #c84a1b;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #dfe9d0 0%, #eef3e4 280px, #f4f7ec 100%);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  line-height: 1.6;
+}
+/* faint row of pine trees along the bottom of the page */
+body::after {
+  content: '';
+  position: fixed; left: 0; right: 0; bottom: 0; height: 96px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='48' viewBox='0 0 72 48'%3E%3Cpath fill='%232f7d50' d='M20 2 L34 26 H27 L38 44 H2 L13 26 H6 Z'/%3E%3Cpath fill='%232f7d50' d='M54 14 L66 34 H60 L70 46 H38 L48 34 H42 Z'/%3E%3C/svg%3E") repeat-x bottom;
+  background-size: 72px 48px;
+  opacity: 0.1; pointer-events: none; z-index: -1;
+}
+
+h1, h2, h3, .stat-num, .tab-btn {
+  font-family: 'Bricolage Grotesque', 'IBM Plex Sans', sans-serif;
+}
+
+/* ---------- header ---------- */
+.top {
+  position: relative;
+  display: flex; flex-wrap: wrap; gap: 12px 32px;
+  justify-content: space-between; align-items: flex-end;
+  padding: 30px clamp(16px, 4vw, 48px) 74px;
+  background: linear-gradient(180deg, #2b6a45 0%, #1f4d34 100%);
+  color: #f4f2e2;
+}
+/* dark pine silhouettes along the bottom edge of the header */
+.top::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 0; height: 52px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='48' viewBox='0 0 72 48'%3E%3Cpath fill='%23163a27' d='M20 2 L34 26 H27 L38 44 H2 L13 26 H6 Z'/%3E%3Cpath fill='%23163a27' d='M54 14 L66 34 H60 L70 46 H38 L48 34 H42 Z'/%3E%3Crect x='0' y='44' width='72' height='4' fill='%23163a27'/%3E%3C/svg%3E") repeat-x bottom;
+  background-size: 72px 48px;
+  pointer-events: none;
+}
+h1 { margin: 0; font-size: clamp(1.7rem, 4.5vw, 2.8rem); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.sub { margin: 6px 0 0; color: #cfe3c9; font-size: 1.05rem; }
+.credit { margin: 0; color: #cfe3c9; font-size: 0.85rem; max-width: 34ch; }
+
+/* ---------- tabs ---------- */
+.tabs {
+  display: flex; gap: 6px; overflow-x: auto;
+  padding: 0 clamp(16px, 4vw, 48px);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.tab-btn {
+  background: none; border: none; color: var(--muted);
+  padding: 14px 16px; font-size: 1rem; font-weight: 600; cursor: pointer;
+  border-bottom: 3px solid transparent; white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--forest-dark); border-bottom-color: var(--forest); }
+.tab-btn:focus-visible, .btn:focus-visible, input:focus-visible {
+  outline: 2px solid var(--forest); outline-offset: 2px;
+}
+
+/* ---------- panels ---------- */
+main { padding: 26px clamp(16px, 4vw, 48px) 120px; max-width: 1200px; margin: 0 auto; }
+.panel { display: none; }
+.panel.active { display: block; }
+.panel-head h2 { margin: 0 0 4px; font-size: 1.7rem; letter-spacing: -0.01em; color: var(--forest-dark); }
+.panel-head p { margin: 0 0 20px; color: var(--muted); max-width: 70ch; }
+
+.note { color: var(--muted); font-size: 0.9rem; max-width: 75ch; }
+
+/* ---------- before / after ---------- */
+.compare {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  background: #0a100e; border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; touch-action: pan-y; cursor: ew-resize; user-select: none;
+  box-shadow: 0 6px 20px rgba(31, 77, 52, 0.18);
+}
+.layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+#imgBefore { clip-path: inset(0 50% 0 0); }
+.handle {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 3px;
+  background: #fff; transform: translateX(-50%); pointer-events: none;
+}
+.handle span {
+  position: absolute; top: 50%; left: 50%; width: 38px; height: 38px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+.handle span::before, .handle span::after {
+  content: ''; position: absolute; top: 50%; width: 0; height: 0;
+  border: 6px solid transparent; transform: translateY(-50%);
+}
+.handle span::before { left: 6px; border-right-color: var(--forest-dark); }
+.handle span::after  { right: 6px; border-left-color: var(--forest-dark); }
+.tag {
+  position: absolute; top: 12px; padding: 4px 12px; border-radius: 99px;
+  background: rgba(20, 45, 30, .82); color: #f4f2e2; font-weight: 500; pointer-events: none;
+}
+.tag-l { left: 12px; } .tag-r { right: 12px; }
+.hint {
+  position: absolute; bottom: 10px; font-size: 0.78rem; color: #f4f2e2;
+  background: rgba(20, 45, 30, .72); padding: 4px 10px; border-radius: 99px;
+  pointer-events: none; max-width: 46%;
+}
+.hint-l { left: 10px; } .hint-r { right: 10px; text-align: right; }
+.hint { max-width: none; white-space: nowrap; }
+@media (max-width: 640px) { .hint { font-size: 0.68rem; padding: 3px 8px; } }
+
+input[type=range] { width: 100%; accent-color: var(--forest); margin: 14px 0 4px; }
+
+/* ---------- stats and cards ---------- */
+.stats { display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: flex-end; justify-content: space-between; margin: 12px 0; }
+.stat { display: flex; flex-direction: column; }
+.stat-num { font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat-label { color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
+.loss { color: var(--loss); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 18px 0; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px; display: flex; flex-direction: column;
+  box-shadow: 0 1px 3px rgba(31, 77, 52, 0.08);
+}
+.card .stat-num { font-size: clamp(1.7rem, 3.6vw, 2.4rem); overflow-wrap: anywhere; }
+
+/* ---------- controls ---------- */
+.controls { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; margin-bottom: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 0.92rem; }
+.field.grow { flex: 1 1 260px; }
+input[type=number], input[type=file] {
+  background: #fff; border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 9px 12px; font: inherit; min-width: 150px;
+}
+.btn {
+  background: var(--forest); color: #fff; border: none; border-radius: 8px;
+  padding: 10px 16px; font: inherit; font-weight: 500; cursor: pointer;
+}
+.btn:hover { background: var(--forest-dark); }
+.btn.ghost { background: transparent; color: var(--forest-dark); border: 1px solid var(--forest); }
+.btn.ghost:hover { background: var(--panel-2); }
+
+.msg { padding: 10px 14px; border-radius: 8px; background: var(--panel-2); border-left: 4px solid var(--forest); }
+.msg.warn { background: #fdf0e2; border-left-color: var(--loss); }
+
+/* ---------- analyzer ---------- */
+.canvases { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 16px 0; }
+figure { margin: 0; }
+canvas { width: 100%; height: auto; background: #0a100e; border: 1px solid var(--line); border-radius: var(--radius); display: block; }
+figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+
+/* ---------- offset breakdown ---------- */
+.breakdown { display: grid; gap: 10px; max-width: 640px; }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 90px; gap: 12px; align-items: center; font-size: 0.92rem; color: var(--muted); }
+.bar-track { background: var(--panel-2); border-radius: 99px; height: 12px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--loss); border-radius: 99px; transition: width .4s ease; }
+
+/* ---------- about ---------- */
+.prose { max-width: 80ch; }
+.prose h3 { margin: 28px 0 6px; font-size: 1.25rem; color: var(--forest-dark); }
+.prose p, .prose li { margin: 0 0 10px; }
+.prose ul, .prose ol { padding-left: 1.3em; }
+.prose code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; font-size: 0.92em; }
+.about-cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.about-cards .card b { font-family: 'Bricolage Grotesque', sans-serif; font-size: 1.1rem; color: var(--forest-dark); }
+
+footer { padding: 20px clamp(16px, 4vw, 48px) 130px; color: var(--muted); font-size: 0.85rem; }
+
+@media (max-width: 800px) {
+  .bar-row { grid-template-columns: 90px 1fr 70px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+
+</style>
+</head>
+<body>
+
+  <header class="top">
+    <div>
+      <h1>Watching the Amazon disappear</h1>
+      <p class="sub">Satellite monitoring of deforestation in Rond&#244;nia, Brazil</p>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+    <button class="tab-btn active" role="tab" data-tab="tab-slider">Before and after</button>
+    <button class="tab-btn" role="tab" data-tab="tab-impact">Impact calculator</button>
+    <button class="tab-btn" role="tab" data-tab="tab-analyzer">Image analyzer</button>
+    <button class="tab-btn" role="tab" data-tab="tab-offset">Offset calculator</button>
+    <button class="tab-btn" role="tab" data-tab="tab-about">About the project</button>
+  </nav>
+
+  <main>
+
+    <!-- TAB 1: BEFORE / AFTER SLIDER -->
+    <section class="panel active" id="tab-slider">
+      <div class="panel-head">
+        <h2>Drag the circle to compare the same place in two years</h2>
+        <p>Sentinel-2 satellite images. Left of the line is <span class="yb"></span>, right is <span class="ya"></span>.</p>
+      </div>
+
+      <p class="msg warn" id="demoBanner" hidden>
+        These are generated DEMO images, not real satellite data. Put your Sentinel-2 images in the images folder
+        (rondonia_2016.png and rondonia_2026.png), or upload them in the Image analyzer tab, to replace them.
+      </p>
+
+      <div class="compare" id="compare">
+        <img class="layer" id="imgAfter" alt="Satellite image, later year">
+        <img class="layer" id="imgBefore" alt="Satellite image, earlier year">
+        <div class="handle" id="handle"><span></span></div>
+        <span class="hint hint-l">&larr; more loss (2026)</span>
+        <span class="hint hint-r">more forest (2016) &rarr;</span>
+        <span class="tag tag-l" id="tagBefore"></span>
+        <span class="tag tag-r" id="tagAfter"></span>
+      </div>
+
+      <input type="range" id="sliderRange" min="0" max="100" value="50" aria-label="Comparison slider">
+
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-num loss" id="revealedHa">&#8212;</span>
+          <span class="stat-label">hectares of forest lost, revealed as you move the circle toward 2016</span>
+        </div>
+        <label class="field">
+          Area the image covers (km&#178;)
+          <input type="number" id="areaKm2" min="1" step="1">
+        </label>
+      </div>
+      <p class="note">The hectare figure comes from the green-pixel analysis in the Image analyzer tab. 1 km&#178; = 100 hectares.</p>
+    </section>
+
+    <!-- TAB 2: IMPACT CALCULATOR -->
+    <section class="panel" id="tab-impact">
+      <div class="panel-head">
+        <h2>What does that much forest loss mean?</h2>
+        <p>Enter hectares of forest lost and see the trees, carbon and CO&#8322; behind it.</p>
+      </div>
+
+      <div class="controls">
+        <label class="field">
+          Forest lost (hectares)
+          <input type="number" id="hectares" min="0" step="1" value="1000">
+        </label>
+        <button class="btn" id="useAnalysis" type="button">Use hectares from image analysis</button>
+      </div>
+
+      <div class="cards">
+        <div class="card"><span class="stat-num" id="oTrees">0</span><span class="stat-label">trees lost</span></div>
+        <div class="card"><span class="stat-num" id="oCarbon">0</span><span class="stat-label">tonnes of carbon stored</span></div>
+        <div class="card"><span class="stat-num loss" id="oCO2">0</span><span class="stat-label">tonnes of CO&#8322; released if burned or left to rot</span></div>
+        <div class="card"><span class="stat-num" id="oCars">0</span><span class="stat-label">cars' yearly emissions, equal to that CO&#8322;</span></div>
+        <div class="card"><span class="stat-num" id="oFields">0</span><span class="stat-label">football fields of forest</span></div>
+      </div>
+      <p class="note" id="impactNote"></p>
+    </section>
+
+    <!-- TAB 3: IMAGE ANALYZER -->
+    <section class="panel" id="tab-analyzer">
+      <div class="panel-head">
+        <h2>Find the lost forest, pixel by pixel</h2>
+        <p>The page reads each pixel's colour. A pixel counts as forest if it is green enough. Forest in the first image but not the second is marked orange.</p>
+      </div>
+
+      <div class="controls">
+        <label class="field">Earlier image <input type="file" id="fileBefore" accept="image/*"></label>
+        <label class="field">Later image <input type="file" id="fileAfter" accept="image/*"></label>
+      </div>
+      <div class="controls">
+        <label class="field grow">
+          <span>Greenness threshold: <b id="thresholdVal">15</b></span>
+          <input type="range" id="threshold" min="0" max="60" value="15">
+        </label>
+        <button class="btn" id="analyzeUpload" type="button">Analyze uploaded images</button>
+        <button class="btn ghost" id="analyzeProject" type="button">Use project images</button>
+      </div>
+      <p class="msg" id="analyzerMsg" hidden></p>
+
+      <div class="canvases">
+        <figure><canvas id="cvBefore"></canvas><figcaption>Earlier image</figcaption></figure>
+        <figure><canvas id="cvAfter"></canvas><figcaption>Later image</figcaption></figure>
+        <figure><canvas id="cvChange"></canvas><figcaption>Change map: orange is lost forest, green is forest that remains</figcaption></figure>
+      </div>
+
+      <div class="cards" id="results" hidden>
+        <div class="card"><span class="stat-num" id="rBefore">0</span><span class="stat-label">% forest cover, earlier image</span></div>
+        <div class="card"><span class="stat-num" id="rAfter">0</span><span class="stat-label">% forest cover, later image</span></div>
+        <div class="card"><span class="stat-num loss" id="rLostPct">0</span><span class="stat-label">% of the original forest lost</span></div>
+        <div class="card"><span class="stat-num loss" id="rLostHa">0</span><span class="stat-label">hectares lost (uses the area set in the first tab)</span></div>
+      </div>
+      <p class="msg warn" id="thresholdWarning">
+        <b>Why the threshold matters:</b> set too high, the change map can turn into one large
+        solid block instead of scattered patches &mdash; that usually means ordinary lighting or colour
+        differences between the two satellite passes are being counted as "lost forest," not real clearing.
+        Move the slider while comparing the change map (right) against the two photos (left):
+        the right value is the one where the orange patches actually line up with clearings you
+        can see in the photos, not a plain colour difference across the whole frame.
+      </p>
+      <p class="note">Tip: if clouds or water are counted wrongly, move the threshold and the result updates. Both images should show the same area.</p>
+    </section>
+
+    <!-- TAB 4: OFFSET CALCULATOR -->
+    <section class="panel" id="tab-offset">
+      <div class="panel-head">
+        <h2>How many trees would cancel out your year?</h2>
+        <p>Enter a few habits. Numbers are rough estimates, not exact.</p>
+      </div>
+
+      <div class="controls">
+        <label class="field">Car or bike travel (km per week)
+          <input type="number" id="carKm" min="0" value="60"></label>
+        <label class="field">Flights (km per year)
+          <input type="number" id="flightKm" min="0" value="2000"></label>
+        <label class="field">Electricity (kWh per month)
+          <input type="number" id="kwh" min="0" value="150"></label>
+      </div>
+
+      <div class="cards">
+        <div class="card"><span class="stat-num" id="fTotal">0</span><span class="stat-label">kg of CO&#8322; per year</span></div>
+        <div class="card"><span class="stat-num loss" id="fTrees">0</span><span class="stat-label">trees needed for a year to absorb it</span></div>
+        <div class="card"><span class="stat-num" id="fHa">0</span><span class="stat-label">hectares of Amazon-density forest that is</span></div>
+      </div>
+
+      <div class="breakdown" id="breakdown"></div>
+    </section>
+
+
+    <!-- TAB 5: ABOUT -->
+    <section class="panel" id="tab-about">
+      <div class="panel-head">
+        <h2>About this project</h2>
+        <p>Digital Monitoring of Deforestation in the Amazon: a case study of Rond&#244;nia, Brazil.</p>
+      </div>
+
+      <div class="prose">
+        <!-- TODO: replace the brackets with your details -->
+        <h3>The problem</h3>
+        <p>Deforestation is the permanent clearing of forest for farms, roads, mining and settlements. Forests store carbon, shape rainfall and shelter wildlife, so losing them affects climate and biodiversity. Walking through a forest as large as the Amazon to check it is slow and expensive, but a satellite photographs the whole area again and again. That is what "digital monitoring" means here.</p>
+
+        <h3>Why Rond&#244;nia</h3>
+        <p>Rond&#244;nia is a state in north-western Brazil, inside the Amazon rainforest region. It lies on the southern edge of the Amazon, sometimes called the "Arc of Deforestation". Roads cut into the forest and farms spread out from them in a fishbone pattern, which is easy to spot in satellite images.</p>
+
+        <h3>What we did</h3>
+        <ol>
+          <li>Downloaded two Sentinel-2 satellite images of the same place in Rond&#244;nia, one early year and one recent year, from the Sentinel Hub EO Browser.</li>
+          <li>Built this dashboard using HTML, CSS and JavaScript.</li>
+          <li>Made the computer compare the two images pixel by pixel to find where forest disappeared.</li>
+          <li>Turned that loss into numbers people can relate to: trees, carbon, CO&#8322; and personal offsets.</li>
+        </ol>
+
+        <h3>What each tab does</h3>
+        <div class="cards about-cards">
+          <div class="card"><b>Before and after</b><span class="stat-label">Drag a line across the two images to see the same place in two years. The counter shows the hectares lost.</span></div>
+          <div class="card"><b>Impact calculator</b><span class="stat-label">Trees lost = hectares &#215; trees per hectare. Carbon = hectares &#215; carbon per hectare. CO&#8322; = carbon &#215; 3.67.</span></div>
+          <div class="card"><b>Image analyzer</b><span class="stat-label">The core of the project. It marks forest that existed in the first image and is gone in the second, and gives the percentage lost.</span></div>
+          <div class="card"><b>Offset calculator</b><span class="stat-label">Adds up CO&#8322; from travel, flights and electricity, then divides by what one tree absorbs in a year.</span></div>
+        </div>
+
+        <h3>How the analyzer decides what is forest</h3>
+        <p>A satellite picture is a grid of tiny squares called pixels. Each pixel has a red, green and blue value from 0 to 255. Healthy forest is greener than it is red or blue, so for every pixel the code calculates <code>2 &#215; green &#8722; red &#8722; blue</code>. If the result is above a chosen threshold, the pixel counts as forest. A pixel that is forest in the first image but not in the second is marked orange as lost forest. Hectares lost = (lost pixels &#247; all pixels) &#215; area of the image.</p>
+
+        <h3>Limitations</h3>
+        <ul>
+          <li>Clouds, shadows and water can be mistaken for cleared land. The threshold slider helps, but it is not perfect.</li>
+          <li>This uses ordinary colour images. Professional systems also use infrared light (for example NDVI) and are more accurate.</li>
+          <li>Trees per hectare, carbon per hectare and emission factors are average estimates. Real values vary with the forest and the year.</li>
+          <li>Only two dates are compared, so this shows the total change, not what happened in between.</li>
+        </ul>
+
+        <h3>Data and tools</h3>
+        <ul>
+          <li>Satellite images: Copernicus Sentinel-2, viewed through Sentinel Hub EO Browser.</li>
+          <li>Conversion factors: published sources, listed in the data.js file and in the report bibliography.</li>
+          <li>Built with HTML, CSS and JavaScript, with AI assistance used for guidance on the code.</li>
+        </ul>
+
+        <h3>What this shows</h3>
+        <p>Satellite images let anyone measure forest loss quickly, cheaply and repeatedly. Turning the loss into hectares, trees and CO&#8322; makes the problem easier to understand, and the offset calculator shows what the same emissions would mean in trees.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Data: Sentinel-2 imagery (Copernicus / ESA) and published conversion factors listed in data.js.</p>
+  </footer>
+
+  <script>
+/* ============================================================
+   data.js  -  ALL the numbers used by the dashboard live here.
+   Check every value against its source and cite it in your report.
+   ============================================================ */
+
+const DATA = {
+
+  /* ---------- Tab 1 and 3: your two satellite images ---------- */
+  yearBefore: 2016,
+  yearAfter: 2026,
+  imgBefore: 'images/rondonia_2016.png',
+  imgAfter:  'images/rondonia_2026.png',
+
+  // How much ground your image covers, in km\u00b2. In EO Browser use the
+  // distance/scale tool, or estimate width x height. This is the default
+  // shown in the first tab, and you can change it on the page.
+  defaultAreaKm2: 100,
+
+  /* ---------- Tab 2 and 4: conversion factors ----------
+     These are APPROXIMATE. Look each one up, replace it if you find a
+     better source, and write the source in your bibliography.          */
+
+  treesPerHectare: 600,          // Amazon trees (10 cm+ trunk) per hectare. Source to check: ter Steege et al., Science 2013
+  carbonTonnesPerHectare: 150,   // tonnes of carbon stored above ground per hectare. Source to check: Saatchi et al., PNAS 2011
+  co2PerCarbon: 44 / 12,         // chemistry: 1 tonne of carbon = 3.67 tonnes of CO2 (molecular weights 44 and 12)
+
+  carCO2TonnesPerYear: 4.6,      // typical passenger car, tonnes CO2 per year. Source to check: US EPA
+  footballFieldHectares: 0.714,  // FIFA pitch 105 m x 68 m = 7,140 m\u00b2
+
+  carKgPerKm: 0.25,              // kg CO2 per km, average petrol car (about 400 g per mile, US EPA)
+  flightKgPerKm: 0.15,           // kg CO2 per passenger-km, approximate. Source to check: UK DEFRA conversion factors
+  gridKgPerKwh: 0.71,            // kg CO2 per kWh of Indian grid electricity, approximate. Source to check: Central Electricity Authority (CEA)
+  treeKgPerYear: 21,             // kg CO2 one mature tree absorbs per year, commonly cited estimate. It varies a lot by species and age.
+};
+
+</script>
+  <script>
+'use strict';
+
+/* ============================================================
+   script.js  -  logic for the dashboard tabs.
+   Sections:  0 helpers | 1 tabs | 2 image analysis (the core)
+              3 before/after slider | 4 impact calculator
+              5 image analyzer tab | 6 offset calculator
+   ============================================================ */
+
+
+/* ---------- 0. HELPERS ---------- */
+
+const $ = id => document.getElementById(id);
+
+// Format numbers with commas (Indian grouping), e.g. 1234567 -> 12,34,567
+function fmt(n, decimals = 0) {
+  return Number(n).toLocaleString('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
+// Count a number up (or down) smoothly to a new value
+function animateNumber(el, to, decimals = 0, ms = 700) {
+  const from = el._value || 0;
+  el._value = to;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = fmt(to, decimals);
+    return;
+  }
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / ms, 1);
+    const eased = 1 - Math.pow(1 - t, 3);          // fast start, slow finish
+    el.textContent = fmt(from + (to - from) * eased, decimals);
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// Shared results from the image analysis, used by several tabs
+const state = { imgA: null, imgB: null, lostFraction: null };
+
+
+/* ---------- 1. TABS ---------- */
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.tab).classList.add('active');
+  });
+});
+
+
+/* ---------- 2. IMAGE ANALYSIS (the core idea) ----------
+   A satellite photo is a grid of pixels. Each pixel has red, green, blue
+   values (0-255). Healthy forest reflects more green than red or blue.
+   "Excess green" = 2*G - R - B. If it is above a threshold, we call the
+   pixel forest. Doing this for both years and comparing tells us which
+   pixels changed from forest to not-forest.                              */
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load ' + src));
+    img.src = src;
+  });
+}
+
+function getPixels(img, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h);
+}
+
+function isForest(r, g, b, threshold) {
+  return (2 * g - r - b) > threshold;
+}
+
+function drawTo(canvasId, img, w, h) {
+  const c = $(canvasId);
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+}
+
+function showMsg(text, warn = false) {
+  const m = $('analyzerMsg');
+  m.textContent = text;
+  m.classList.toggle('warn', warn);
+  m.hidden = !text;
+}
+
+function areaKm2() {
+  return Number($('areaKm2').value) || 0;
+}
+
+function runAnalysis(imgA, imgB) {
+  state.imgA = imgA;
+  state.imgB = imgB;
+  const threshold = Number($('threshold').value);
+
+  // Shrink to max 500 px wide so it stays fast. Image B is fitted to A's size.
+  const W = Math.min(imgA.naturalWidth, 500);
+  const H = Math.round(W * imgA.naturalHeight / imgA.naturalWidth);
+
+  let pa, pb;
+  try {
+    pa = getPixels(imgA, W, H);
+    pb = getPixels(imgB, W, H);
+  } catch (e) {
+    showMsg('The browser blocked reading the image pixels. Open the site with the VS Code "Live Server" extension (http://...), not by double-clicking index.html.', true);
+    return;
+  }
+
+  const change = new ImageData(W, H);
+  const total = W * H;
+  let forestA = 0, forestB = 0, lost = 0;
+
+  for (let i = 0; i < total; i++) {
+    const k = i * 4;
+    const inA = isForest(pa.data[k], pa.data[k + 1], pa.data[k + 2], threshold);
+    const inB = isForest(pb.data[k], pb.data[k + 1], pb.data[k + 2], threshold);
+    if (inA) forestA++;
+    if (inB) forestB++;
+
+    let r, g, b;
+    if (inA && !inB)  { lost++; r = 255; g = 112; b = 67; }   // lost forest: orange
+    else if (inA && inB) { r = 40; g = 120; b = 80; }         // forest remains: green
+    else { r = 30; g = 38; b = 36; }                          // never forest: dark
+    change.data[k] = r; change.data[k + 1] = g; change.data[k + 2] = b; change.data[k + 3] = 255;
+  }
+
+  drawTo('cvBefore', imgA, W, H);
+  drawTo('cvAfter', imgB, W, H);
+  const cc = $('cvChange');
+  cc.width = W; cc.height = H;
+  cc.getContext('2d').putImageData(change, 0, 0);
+
+  state.lostFraction = lost / total;          // share of the whole image that was forest and is not any more
+  state.coverBefore = forestA / total * 100;
+  state.coverAfter = forestB / total * 100;
+  state.lostPctOfForest = forestA ? lost / forestA * 100 : 0;
+
+  showMsg('');
+  $('results').hidden = false;
+  refreshDerived();
+}
+
+// Update everything that depends on the analysis or on the area setting
+function refreshDerived() {
+  if (state.lostFraction == null) return;
+  const lostHa = state.lostFraction * areaKm2() * 100;   // 1 km\u00b2 = 100 ha
+  animateNumber($('rBefore'), state.coverBefore, 1);
+  animateNumber($('rAfter'), state.coverAfter, 1);
+  animateNumber($('rLostPct'), state.lostPctOfForest, 1);
+  animateNumber($('rLostHa'), lostHa, 0);
+  updateRevealed();
+}
+
+let demoActive = false;
+
+// Build a fake "fishbone" landscape so the dashboard works before you have real images.
+// Both years share the same forest texture and road positions; only the clearings grow.
+function makeDemoCanvas(late) {
+  const W = 800, H = 450;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  g.fillStyle = '#2d5a3a';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 12000; i++) {                       // forest texture
+    const v = rnd() * 28;
+    g.fillStyle = `rgb(${(30 + v / 2) | 0},${(80 + v) | 0},${(48 + v / 2) | 0})`;
+    g.fillRect(rnd() * W, rnd() * H, 4, 4);
+  }
+  const cx = W / 2;
+  g.fillStyle = '#b98a6a';
+  g.fillRect(cx - 3, 0, 6, H);                            // main road
+  for (let y = 30; y < H - 20; y += 42) {                 // side roads and clearings
+    [-1, 1].forEach(side => {
+      const reach = 0.35 + rnd() * 0.65;
+      const len = (late ? 300 : 60) * reach;
+      const h = late ? 26 : 8;
+      g.fillRect(side < 0 ? cx - len : cx, y, len, h);
+    });
+  }
+  return c;
+}
+
+async function loadDemo(force = false) {
+  if (demoActive && !force) return;
+  demoActive = true;
+  const a = makeDemoCanvas(false).toDataURL('image/png');
+  const b = makeDemoCanvas(true).toDataURL('image/png');
+  imgBefore.src = a;
+  imgAfter.src = b;
+  $('demoBanner').hidden = false;
+  const [ia, ib] = await Promise.all([loadImage(a), loadImage(b)]);
+  runAnalysis(ia, ib);
+}
+
+async function analyzeProjectImages(fromButton = false) {
+  try {
+    const [a, b] = await Promise.all([loadImage(DATA.imgBefore), loadImage(DATA.imgAfter)]);
+    demoActive = false;
+    $('demoBanner').hidden = true;
+    imgBefore.src = DATA.imgBefore;
+    imgAfter.src = DATA.imgAfter;
+    runAnalysis(a, b);
+  } catch (e) {
+    showMsg('Project images not found in the images folder. Showing demo images instead.', true);
+    loadDemo(fromButton);
+  }
+}
+
+
+/* ---------- 3. BEFORE / AFTER SLIDER ---------- */
+
+const cmp = $('compare');
+const imgBefore = $('imgBefore');
+const imgAfter = $('imgAfter');
+const range = $('sliderRange');
+
+function setSlider(v) {
+  v = Math.max(0, Math.min(100, v));
+  range.value = v;
+  imgBefore.style.clipPath = `inset(0 ${100 - v}% 0 0)`;   // show the left v% of the "before" image
+  $('handle').style.left = v + '%';
+  updateRevealed();
+}
+
+// Dragging left reveals more of the "after" image, so more lost hectares are shown
+function updateRevealed() {
+  if (state.lostFraction == null) { $('revealedHa').textContent = '\u2014'; return; }
+  const totalLostHa = state.lostFraction * areaKm2() * 100;
+  $('revealedHa').textContent = fmt(totalLostHa * (1 - Number(range.value) / 100));
+}
+
+let dragging = false;
+function moveTo(e) {
+  const r = cmp.getBoundingClientRect();
+  setSlider((e.clientX - r.left) / r.width * 100);
+}
+cmp.addEventListener('pointerdown', e => { dragging = true; cmp.setPointerCapture(e.pointerId); moveTo(e); });
+cmp.addEventListener('pointermove', e => { if (dragging) moveTo(e); });
+cmp.addEventListener('pointerup', () => { dragging = false; });
+range.addEventListener('input', () => setSlider(Number(range.value)));
+
+imgBefore.onerror = () => loadDemo();
+imgAfter.onerror = () => loadDemo();
+
+$('areaKm2').addEventListener('input', () => { refreshDerived(); });
+
+
+/* ---------- 4. IMPACT CALCULATOR ---------- */
+
+function calcImpact() {
+  const ha = Math.max(0, Number($('hectares').value) || 0);
+  const trees = ha * DATA.treesPerHectare;
+  const carbon = ha * DATA.carbonTonnesPerHectare;
+  const co2 = carbon * DATA.co2PerCarbon;
+  const cars = co2 / DATA.carCO2TonnesPerYear;
+  const fields = ha / DATA.footballFieldHectares;
+
+  animateNumber($('oTrees'), trees);
+  animateNumber($('oCarbon'), carbon);
+  animateNumber($('oCO2'), co2);
+  animateNumber($('oCars'), cars);
+  animateNumber($('oFields'), fields);
+}
+
+$('hectares').addEventListener('input', calcImpact);
+$('useAnalysis').addEventListener('click', () => {
+  if (state.lostFraction == null) {
+    $('impactNote').textContent = 'Run the Image analyzer first, then come back here.';
+    return;
+  }
+  $('hectares').value = Math.round(state.lostFraction * areaKm2() * 100);
+  $('impactNote').textContent = 'Hectares taken from your image analysis.';
+  calcImpact();
+});
+$('impactNote').textContent =
+  `Assumes about ${DATA.treesPerHectare} trees and ${DATA.carbonTonnesPerHectare} tonnes of carbon per hectare. These are estimates, see data.js for sources.`;
+
+
+/* ---------- 5. IMAGE ANALYZER TAB (uploads and controls) ---------- */
+
+$('threshold').addEventListener('input', () => {
+  $('thresholdVal').textContent = $('threshold').value;
+  if (state.imgA && state.imgB) runAnalysis(state.imgA, state.imgB);   // live update
+});
+
+$('analyzeProject').addEventListener('click', () => analyzeProjectImages(true));
+
+// Reads a File as a data: URL. More reliable than URL.createObjectURL when the
+// page is opened directly as a file:// page instead of through a local server.
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read ' + file.name));
+    reader.readAsDataURL(file);
+  });
+}
+
+$('analyzeUpload').addEventListener('click', async () => {
+  const fa = $('fileBefore').files[0];
+  const fb = $('fileAfter').files[0];
+  if (!fa || !fb) { showMsg('Choose both an earlier and a later image first.', true); return; }
+  try {
+    const urlA = await readFileAsDataURL(fa);
+    const urlB = await readFileAsDataURL(fb);
+    let a, b;
+    try {
+      a = await loadImage(urlA);
+    } catch (e) {
+      showMsg(`The earlier image file ("${fa.name}") could not be opened as an image. Try re-downloading it, or open it once in Paint/Photos to confirm it is a real image file.`, true);
+      return;
+    }
+    try {
+      b = await loadImage(urlB);
+    } catch (e) {
+      showMsg(`The later image file ("${fb.name}") could not be opened as an image. Try re-downloading it, or open it once in Paint/Photos to confirm it is a real image file.`, true);
+      return;
+    }
+    // Also show these in the before/after slider
+    imgBefore.src = urlA;
+    imgAfter.src = urlB;
+    demoActive = false;
+    $('demoBanner').hidden = true;
+    runAnalysis(a, b);
+  } catch (e) {
+    showMsg('One of the files could not be read from disk. Try choosing the files again.', true);
+  }
+});
+
+
+/* ---------- 6. OFFSET CALCULATOR ---------- */
+
+function calcOffset() {
+  const carKm = Math.max(0, Number($('carKm').value) || 0);
+  const flightKm = Math.max(0, Number($('flightKm').value) || 0);
+  const kwh = Math.max(0, Number($('kwh').value) || 0);
+
+  const parts = [
+    { name: 'Road travel', kg: carKm * 52 * DATA.carKgPerKm },
+    { name: 'Flights',     kg: flightKm * DATA.flightKgPerKm },
+    { name: 'Electricity', kg: kwh * 12 * DATA.gridKgPerKwh }
+  ];
+  const total = parts.reduce((s, p) => s + p.kg, 0);
+  const trees = total / DATA.treeKgPerYear;
+  const ha = trees / DATA.treesPerHectare;
+
+  animateNumber($('fTotal'), total);
+  animateNumber($('fTrees'), trees);
+  animateNumber($('fHa'), ha, 2);
+
+  $('breakdown').innerHTML = parts.map(p => {
+    const pct = total ? p.kg / total * 100 : 0;
+    return `<div class="bar-row">
+      <span>${p.name}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <span>${fmt(p.kg)} kg</span>
+    </div>`;
+  }).join('');
+}
+
+['carKm', 'flightKm', 'kwh'].forEach(id => $(id).addEventListener('input', calcOffset));
+
+
+/* ---------- START-UP ---------- */
+
+document.querySelectorAll('.yb').forEach(el => el.textContent = DATA.yearBefore);
+document.querySelectorAll('.ya').forEach(el => el.textContent = DATA.yearAfter);
+$('tagBefore').textContent = DATA.yearBefore;
+$('tagAfter').textContent = DATA.yearAfter;
+$('areaKm2').value = DATA.defaultAreaKm2;
+
+imgBefore.src = DATA.imgBefore;
+imgAfter.src = DATA.imgAfter;
+
+setSlider(50);
+calcImpact();
+calcOffset();
+analyzeProjectImages();      // runs the analysis on your two project images automatically
+
+</script>
+</body>
+</html>
